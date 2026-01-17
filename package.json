@@ -6,17 +6,13 @@
   "scripts": {
     "dev": "vercel dev",
     "start": "vercel dev",
-    "deploy": "vercel --prod",
-    "test": "echo \"No tests specified\" && exit 0"
+    "deploy": "vercel --prod"
   },
   "dependencies": {
-    "node-fetch": "^3.3.2"
-  },
-  "devDependencies": {
-    "@vercel/node": "^3.1.7"
+    "node-fetch": "^2.6.7"
   },
   "engines": {
-    "node": ">=18.x"
+    "node": ">=16.x"
   },
   "keywords": [
     "ai",
@@ -27,9 +23,5 @@
     "interactive"
   ],
   "author": "Experience.X Team",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/sussybocca/experience-x.git"
-  }
+  "license": "MIT"
 }
