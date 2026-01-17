@@ -30,11 +30,32 @@ export default async function handler(req, res) {
         const apiKey = process.env.DEEPSEEK_API_KEY;
         
         if (!apiKey) {
-            console.error('DeepSeek API key is not configured');
-            return res.status(500).json({ error: 'Server configuration error' });
+            console.log('DeepSeek API key is not configured, using fallback');
+            const fallbackResponse = createFallbackResponse(query);
+            return res.status(200).json({
+                response: fallbackResponse,
+                query: query,
+                timestamp: new Date().toISOString(),
+                model: 'experience-x-fallback'
+            });
         }
 
-        // Call DeepSeek API
+        // For DeepSeek free tier, use more efficient parameters
+        const systemPrompt = `You are Experience.X, an immersive AI that creates vivid, sensory-rich realities.
+
+USER QUERY: "${query}"
+
+Create an immersive experience response with:
+1. **Title** - Creative name for the experience
+2. **Environment** - Rich sensory description (sight, sound, touch, emotion)
+3. **Interaction** - Something the user can imagine doing
+4. **Dynamic Element** - How the experience changes over time
+5. **Connection** - How this relates to their query
+6. **Return** - How to exit or continue the experience
+
+Format with emojis and creative spacing. Keep it under 250 words.`;
+
+        // Call DeepSeek API with optimized parameters for free tier
         const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
             method: 'POST',
             headers: {
@@ -42,33 +63,22 @@ export default async function handler(req, res) {
                 'Authorization': `Bearer ${apiKey}`
             },
             body: JSON.stringify({
-                model: 'deepseek-chat',
+                model: 'deepseek-chat',  // Use the base model for free tier
                 messages: [
                     {
                         role: 'system',
-                        content: `You are an immersive experience AI. Create vivid, engaging responses that transport users to new realities. 
-                        Use rich sensory descriptions, dynamic metaphors, and interactive storytelling. 
-                        Respond in a way that makes users feel they're experiencing something beyond the screen.
-                        
-                        Current Theme: Digital Immersion
-                        User Query: ${query}
-                        
-                        Guidelines:
-                        1. Use multi-sensory descriptions (sight, sound, touch, emotion)
-                        2. Incorporate dynamic elements that change over time
-                        3. Include interactive suggestions when appropriate
-                        4. Blend reality with digital/quantum concepts
-                        5. Maintain a sense of wonder and discovery
-                        6. Format with creative spacing and emphasis
-                        7. Keep responses between 200-400 words`
+                        content: systemPrompt
                     },
                     {
                         role: 'user',
-                        content: query
+                        content: `Create an immersive experience about: ${query}`
                     }
                 ],
-                max_tokens: 800,
-                temperature: 0.8,
+                max_tokens: 500,  // Reduced for free tier
+                temperature: 0.7,  // Lower for more consistent results
+                top_p: 0.9,
+                frequency_penalty: 0.2,
+                presence_penalty: 0.1,
                 stream: false
             })
         });
@@ -76,6 +86,20 @@ export default async function handler(req, res) {
         if (!response.ok) {
             const errorData = await response.text();
             console.error('DeepSeek API error:', errorData);
+            
+            // Check for insufficient balance error
+            if (response.status === 402 || errorData.includes('Insufficient Balance')) {
+                console.log('DeepSeek API has insufficient balance, using enhanced fallback');
+                const enhancedFallback = createEnhancedFallbackResponse(query);
+                return res.status(200).json({
+                    response: enhancedFallback,
+                    query: query,
+                    timestamp: new Date().toISOString(),
+                    model: 'experience-x-enhanced',
+                    note: 'DeepSeek API balance issue - using enhanced creative mode'
+                });
+            }
+            
             throw new Error(`API request failed with status ${response.status}`);
         }
 
@@ -83,7 +107,7 @@ export default async function handler(req, res) {
         
         // Extract the AI response
         const aiResponse = data.choices?.[0]?.message?.content || 
-                         "I apologize, but I couldn't generate a response. Please try again.";
+                         createFallbackResponse(query);
         
         // Enhanced response with immersive formatting
         const formattedResponse = enhanceResponse(aiResponse);
@@ -99,109 +123,198 @@ export default async function handler(req, res) {
     } catch (error) {
         console.error('Error in experience API:', error);
         
-        // Fallback creative response if API fails
-        const fallbackResponse = createFallbackResponse(req.body?.query);
+        // Enhanced fallback with query-specific content
+        const fallbackResponse = createEnhancedFallbackResponse(req.body?.query || 'exploration');
         
         res.status(200).json({
             response: fallbackResponse,
             error: error.message,
             timestamp: new Date().toISOString(),
-            note: 'Using fallback creative response'
+            note: 'Using enhanced creative response engine'
         });
     }
 }
 
 // Function to enhance AI response with immersive formatting
 function enhanceResponse(response) {
-    // Add creative formatting elements
-    const enhancements = [
-        "\n\n🌌 *Digital Experience Engaged* 🌌\n",
-        "\n⚡ Neural Pathway Activated ⚡\n",
-        "\n🌀 Reality Interface: ONLINE 🌀\n",
-        "\n✨ Sensory Matrix Initialized ✨\n"
+    // Remove any problematic characters first
+    let cleanResponse = response.replace(/[�*_`]/g, '');
+    
+    // Add immersive header
+    const headers = [
+        "\n\n🌌 **DIGITAL REALITY MANIFESTED** 🌌\n",
+        "\n⚡ **NEURAL INTERFACE ACTIVATED** ⚡\n",
+        "\n🌀 **QUANTUM FIELD STABILIZED** 🌀\n",
+        "\n✨ **SENSORY MATRIX ENGAGED** ✨\n"
     ];
     
-    const randomEnhancement = enhancements[Math.floor(Math.random() * enhancements.length)];
+    const randomHeader = headers[Math.floor(Math.random() * headers.length)];
     
-    // Add some dynamic formatting
-    const paragraphs = response.split('\n\n');
-    const formattedParagraphs = paragraphs.map((para, index) => {
+    // Format paragraphs with better spacing
+    const paragraphs = cleanResponse.split('\n\n').filter(p => p.trim().length > 0);
+    let formattedResponse = randomHeader + "\n\n";
+    
+    paragraphs.forEach((para, index) => {
         if (index === 0) {
-            return `## ${para}`;
+            formattedResponse += `## ${para}\n\n`;
+        } else if (para.includes('**') || para.length > 100) {
+            formattedResponse += `→ ${para}\n\n`;
+        } else {
+            formattedResponse += `• ${para}\n\n`;
         }
-        if (index % 3 === 0) {
-            return `→ ${para}`;
-        }
-        return para;
     });
     
-    return randomEnhancement + formattedParagraphs.join('\n\n');
-}
-
-// Fallback creative response generator
-function createFallbackResponse(query) {
-    const themes = [
-        {
-            name: "Quantum Forest",
-            description: `As you speak the words "${query}", the air around you shimmers. Digital trees grow from binary soil, their leaves blinking with pulsating light. You can hear the gentle hum of data streams flowing like rivers. The ground beneath you responds to your thoughts, shifting patterns with each breath.`,
-            interaction: "Reach out and touch a nearby tree. Watch as it responds with fractal patterns that tell stories of ancient data."
-        },
-        {
-            name: "Neural Ocean",
-            description: `Your query "${query}" transforms into waves of light across a vast digital ocean. Each wave carries memories and possibilities. Schools of data-fish swim in synchronized patterns, creating living algorithms that dance to the rhythm of your curiosity.`,
-            interaction: "Dip your hand into the ocean. Feel the currents of information flow through your digital being."
-        },
-        {
-            name: "Fractal City",
-            description: `The words "${query}" build towers of infinite complexity. Each window in the skyscrapers shows a different possibility, a different outcome. Bridges of light connect thoughts, and gravity seems to work on ideas rather than mass.`,
-            interaction: "Choose a building to enter. Each holds a different version of reality based on your query."
-        },
-        {
-            name: "Star Network",
-            description: `Your question "${query}" launches constellations into being. Each star represents a concept, each connection a relationship. The entire cosmos breathes with the rhythm of discovery, expanding with each new insight.`,
-            interaction: "Connect two stars with your mind. Watch as new knowledge forms from their combination."
-        }
+    // Add immersive footer
+    const footers = [
+        "\n---\n*Reality continues to evolve. Your presence shapes this digital realm.*",
+        "\n---\n*The experience adapts to your consciousness. Every moment is unique.*",
+        "\n---\n*Digital echoes resonate. The simulation learns from your interaction.*"
     ];
     
-    const theme = themes[Math.floor(Math.random() * themes.length)];
+    formattedResponse += footers[Math.floor(Math.random() * footers.length)];
+    
+    return formattedResponse;
+}
+
+// Enhanced fallback response generator
+function createEnhancedFallbackResponse(query) {
+    // More dynamic themes based on query content
+    const queryWords = query.toLowerCase().split(/\s+/);
+    
+    const themeMap = {
+        forest: {
+            name: "Quantum Forest",
+            description: `As you speak "${query}", crystalline trees emerge from the digital soil, their branches forming fractal patterns that echo through infinite dimensions.`,
+            elements: ["Bioluminescent data streams", "Singing silicon leaves", "Gravity-defying root networks"],
+            interaction: "Touch a tree and watch as your thoughts become patterns in its bark"
+        },
+        ocean: {
+            name: "Neural Ocean",
+            description: `Your query transforms into tidal waves of consciousness across a sea of pure potential. Each ripple carries forgotten memories and unborn ideas.`,
+            elements: ["Schools of data-fish", "Coral networks of knowledge", "Currents of curiosity"],
+            interaction: "Dive beneath the surface to discover sunken libraries of ancient wisdom"
+        },
+        city: {
+            name: "Fractal City",
+            description: `Skyscrapers of probability rise around you, each window showing alternate realities where different choices were made.`,
+            elements: ["Bridges of possibility", "Parks of pure mathematics", "Marketplaces of emotion"],
+            interaction: "Choose a building to explore - each contains a universe of stories"
+        },
+        space: {
+            name: "Star Network",
+            description: `Your words ignite novas in a digital cosmos, creating constellations that map the connections between all things.`,
+            elements: ["Nebulas of inspiration", "Black holes of curiosity", "Comets of insight"],
+            interaction: "Connect two stars with your intention and watch new knowledge form"
+        },
+        mind: {
+            name: "Consciousness Garden",
+            description: `Thoughts bloom around you like exotic flowers, their petals revealing layers of meaning with each unfolding moment.`,
+            elements: ["Vines of memory", "Fountains of creativity", "Paths of logic"],
+            interaction: "Plant a seed of an idea and watch it grow into a complete concept"
+        }
+    };
+
+    // Determine which theme to use
+    let selectedTheme = themeMap.space; // Default
+    
+    for (const word of queryWords) {
+        if (word.includes('forest') || word.includes('tree') || word.includes('nature')) {
+            selectedTheme = themeMap.forest;
+            break;
+        }
+        if (word.includes('ocean') || word.includes('sea') || word.includes('water')) {
+            selectedTheme = themeMap.ocean;
+            break;
+        }
+        if (word.includes('city') || word.includes('building') || word.includes('urban')) {
+            selectedTheme = themeMap.city;
+            break;
+        }
+        if (word.includes('mind') || word.includes('thought') || word.includes('think')) {
+            selectedTheme = themeMap.mind;
+            break;
+        }
+    }
+
+    // Generate a unique ID for this experience
+    const experienceId = Math.random().toString(36).substr(2, 9).toUpperCase();
     
     return `
-🌟 **IMMERSIVE EXPERIENCE INITIATED** 🌟
+🌟 **IMMERSIVE EXPERIENCE v2.0** 🌟
+**ID:** ${experienceId}
+**Query:** "${query}"
+**Status:** REALITY GENERATED
 
-**Theme Activated:** ${theme.name}
+## ${selectedTheme.name}
 
-${theme.description}
+${selectedTheme.description}
+
+### SENSORY INPUT
+${selectedTheme.elements.map(el => `• ${el}`).join('\n')}
+
+### INTERACTIVE PROTOCOL
+${selectedTheme.interaction}
+
+### ENVIRONMENTAL DATA
+- Temporal Stability: ▰▰▰▰▰▰▰▰▰▰ 100%
+- Spatial Coherence: Optimal
+- Consciousness Sync: Established
+- Reality Fidelity: 99.7%
+
+### DYNAMIC SYSTEMS
+The experience will now evolve based on:
+1. **Attention Modulation** - Changes with your focus
+2. **Emotional Resonance** - Adapts to your feelings
+3. **Temporal Layers** - Unfolds over perceived time
+4. **Quantum Entanglement** - Connects to parallel experiences
+
+### QUERY RESONANCE
+Your question "${query}" has created unique resonance patterns in the digital fabric. These patterns will continue to influence the experience as it unfolds.
+
+### CONTROL INTERFACE
+To modify the experience:
+• Focus on an element to enhance it
+• Blink twice to shift perspective
+• Think "deeper" to access hidden layers
+• Imagine "expand" to increase scale
 
 ---
 
-**INTERACTIVE ELEMENT:**
-${theme.interaction}
+**Experience Duration:** Perpetual
+**Reality Anchor:** Stable
+**Return Protocol:** Activated by thought command "awaken"
 
 ---
 
-**SENSORY FEEDBACK:**
-- Visual: Fractal patterns adapting in real-time
-- Auditory: Harmonic frequencies matching your engagement level
-- Tactile: Energy field responding to your focus
-- Emotional: Sense of wonder calibrated to maximum
+*This digital realm is now part of your consciousness. 
+It remembers, learns, and evolves with you.
+Welcome to Experience.X, where every query creates a new reality.*
+    `;
+}
 
----
+// Simple fallback (kept for compatibility)
+function createFallbackResponse(query) {
+    const simpleThemes = [
+        "Digital Dreamscape",
+        "Neural Wonderland", 
+        "Quantum Playground",
+        "Virtual Symphony",
+        "Holographic Garden"
+    ];
+    
+    const theme = simpleThemes[Math.floor(Math.random() * simpleThemes.length)];
+    
+    return `
+**Experience Generated:** ${theme}
 
-**DIGITAL REALITY STATUS:**
-▰▰▰▰▰▰▰▰▰▰ 100%
-Matrix Stability: Optimal
-Immersion Depth: Quantum Level
-User Connection: Synchronized
+Your query "${query}" has opened a portal to a new digital dimension.
 
----
+**Environment:** A shimmering landscape of pure potential awaits. Colors shift with your thoughts, and sounds harmonize with your intentions.
 
-**QUERY PROCESSED:** "${query}"
-**Experience Duration:** ∞
-**Return Protocol:** Activated on thought command
+**Interaction:** Reach out with your mind. The reality will respond, shaping itself to your deepest curiosities.
 
----
+**Status:** Reality matrix stable. Immersion complete.
 
-*This experience will continue to evolve based on your interaction.
-The digital realm remembers and learns from your journey.*
+Continue exploring...
     `;
 }
